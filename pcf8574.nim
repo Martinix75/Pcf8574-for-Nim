@@ -71,12 +71,12 @@ proc setHigh*(self: var Pcf8574) = #set data 0xff all 1
   self.data = 0xff
   self.writeByte(self.data)
 
-proc newExpander*(blokk: ptr I2cInst; expAdd: uint8=0x20): Pcf8574 =
+proc initExpander*(blokk: ptr I2cInst; expAdd: uint8=0x20): Pcf8574 =
   result = Pcf8574(blockk: blokk, expAdd: expAdd)
 
 when isMainModule:
   stdioInitAll()
-  var exp = newExpander(blokk = i2c1, expAdd = 0x20)
+  var exp = initExpander(blokk = i2c1, expAdd = 0x20)
   const sda = 2.Gpio 
   const scl = 3.Gpio 
   discard init(i2c1,10000)
