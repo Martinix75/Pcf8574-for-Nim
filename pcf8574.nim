@@ -11,12 +11,15 @@ https://github.com/Martinix75/Raspberry_Pico/tree/main/Libs/pcf8574
 ## Module to manage the PCF8574.
 ## Allows you to read and write either individual bits, or whole bytes.
 
-import picostdlib/[stdio, gpio, i2c, time]
+#import picostdlib/[stdio, gpio, i2c, time]
+import picostdlib
+import picostdlib/pico/[stdio, time]
+import picostdlib/hardware/[gpio, i2c]
 
 from math import log2
 
 const 
-  pcf8574Ver* = "1.4.0"
+  pcf8574Ver* = "2.0.0" #addattamenta a picostdlib >= 0.4.0 e via ref (era piu lento).
   p0*: byte = 0x01 #create a bit mask 
   p1*: byte = p0 shl 1
   p2*: byte = p0 shl 2
@@ -27,34 +30,20 @@ const
   p7*: byte = p0 shl 7
 
 type 
-  Pcf8574* = ref object #creates the pcf8574 object
+  Pcf8574* = object #creates the pcf8574 object
     expAdd: uint8
-    blockk: I2cInst
+    blockk: ptr I2cInst
     data: byte
 
-proc writeByte*(self: Pcf8574; data: byte; inverse: bool=true) = #proc to write the byte
-  ## Write a whole byte (8bit) on the PCF8574 register.
-  ##
-  runnableExamples:
-    self.writeByte(0xFF)
-  ## ** Parameters**
-  ## - *data:* it is the byte you want to write on the pcf8574 register.
-  ## - *inverse:* Normally the byte is reversed, because the pcf8574 works with reverse logic.
+proc writeByte*(self: var Pcf8574; data: byte; inverse: bool=true) = #proc to write the byte
   if inverse == true:
     self.data = not data
   else:
     self.data = data
   let addrData = self.data.unsafeAddr #get the address of the data
-  writeBlocking(self.blockk, self.expAdd, addrData, 1, false) #write the data on the i2c bus 
+  discard writeBlocking(self.blockk, self.expAdd.I2cAddress, addrData, 1, false) #write the data on the i2c bus 
 
-proc writeBit*(self: Pcf8574, pin: uint8, value: bool) =
-  ## Write a single bit on pcf8574 on the exit desired (p0, p1..p7).
-  ##
-  runnableExamples:
-    self.writeBit(pin=p3, value=on)
-  ## **Parameters**
-  ## - *pin:* it is the pin on which you want to write the new value (p0..p7).
-  ## - *value:* *on* = set exit high, *off* = set exit low.
+proc writeBit*(self: var Pcf8574, pin: uint8, value: bool) =
   if value == on:
     self.data = not self.data or pin #go to act (turn on) the selected bit 
     self.writeByte(self.data)
@@ -64,47 +53,45 @@ proc writeBit*(self: Pcf8574, pin: uint8, value: bool) =
       self.data = (self.data xor pin) #go to act (turn off) the selected bit 
       self.writeByte(self.data)
 
-proc readByte*(self: Pcf8574): byte =
-  ## Read the entry byte present that istant on pcf8574 (8bit).
-  ##
-  runnableExamples:
-    let pfcByte = self.readByte()
-    print("Byte on pcf8574: " & $pcfByte & '\n')
-  ## **return**
-  ## - *Byte*
+proc readByte*(self: var Pcf8574): byte =
   self.data = 0
   let addrByte = self.data.unsafeAddr
-  discard readBlocking(self.blockk, self.expAdd, addrByte, 1, false)
+  discard readBlocking(self.blockk, self.expAdd.I2cAddress, addrByte, 1, false)
   result = self.data
 
-proc readBit*(self: Pcf8574; pin: uint8): bool =
-  ## Read the value of a single bit in the pcf8574 register.
-  ##
-  runnableExamples:
-    var valuP2 = self.readBit(p2)
-  ## **parameters**
-  ## - *pin:* it is the pin on which you want to read (p0..p7).
-  ## **return**
-  ## - *bool* *on* if the value is high, *off* if the value is low.
+proc readBit*(self: var Pcf8574; pin: uint8): bool =
   let bitValue: byte = self.readByte()
   result = bool(bitValue and pin)
 
-proc setLow*(self: Pcf8574) = #set data 0x00 all 0
-  ## Set all low.
-  ##
-  runnableExamples:
-    self.stLow()
+proc setLow*(self: var Pcf8574) = #set data 0x00 all 0
   self.data = 0x00
   self.writeByte(self.data)
 
-proc setHigh*(self: Pcf8574) = #set data 0xff all 1
-  ## set all high.
-  ##
-  runnableExamples:
-    self.setHigh()
+proc setHigh*(self: var Pcf8574) = #set data 0xff all 1
   self.data = 0xff
   self.writeByte(self.data)
 
-proc newExpander*(blokk: I2cInst; expAdd: uint8=0x20): Pcf8574 =
+proc newExpander*(blokk: ptr I2cInst; expAdd: uint8=0x20): Pcf8574 =
   result = Pcf8574(blockk: blokk, expAdd: expAdd)
+
+when isMainModule:
+  stdioInitAll()
+  var exp = newExpander(blokk = i2c1, expAdd = 0x20)
+  const sda = 2.Gpio 
+  const scl = 3.Gpio 
+  discard init(i2c1,10000)
+  sda.setFunction(I2C); sda.pullUp()
+  scl.setFunction(I2C); scl.pullUp()
+
+  let timeSl: uint32 = 200
+  var superCar: uint8 = 0x01
+  while true:
+    for _ in countup(0,6):
+      exp.writeByte(superCar)
+      superCar = superCar shl 1
+      sleepMs(timeSl)
+    for _ in countup(0,6):
+      exp.writeByte(superCar)
+      superCar = superCar shr 1
+      sleepMs(timeSl)
 
